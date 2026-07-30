@@ -10,7 +10,7 @@ export interface UserSettings {
 }
 
 export const DEFAULT_SETTINGS: UserSettings = {
-  backendUrl: "http://localhost:3000/api/analyze",
+  backendUrl: "https://speed-invest-web-backend-h5nkvzn6v.vercel.app/api/analyze",
   model: "anthropic/claude-3-5-sonnet",
   openRouterApiKey: "",
 };
@@ -26,7 +26,7 @@ export const AVAILABLE_MODELS = [
 export async function getSettings(): Promise<UserSettings> {
   return new Promise((resolve) => {
     if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
-      chrome.storage.local.get(DEFAULT_SETTINGS, (result) => {
+      chrome.storage.local.get(DEFAULT_SETTINGS, (result: Record<string, any>) => {
         resolve({
           backendUrl: result.backendUrl || DEFAULT_SETTINGS.backendUrl,
           model: result.model || DEFAULT_SETTINGS.model,
