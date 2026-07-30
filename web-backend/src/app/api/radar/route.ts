@@ -21,11 +21,12 @@ const FINNHUB_BASE    = "https://finnhub.io/api/v1";
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 export interface CatalystResult {
-  ticker:         string;
-  impact_score:   number;
-  direction:      "BULLISH" | "BEARISH";
-  event_category: string;
-  reason:         string;
+  ticker:             string;
+  impact_score:       number;
+  direction:          "BULLISH" | "BEARISH";
+  event_category:     string;
+  reason:             string;
+  actionable_summary?: string;
 }
 
 interface CatalystResponse {
@@ -43,7 +44,7 @@ interface NewsHeadline {
 
 const CATALYST_SYSTEM_PROMPT = `You are 'Catalyst', an elite AI Quantitative News Screener. Analyze a batch of recent news headlines and identify high-probability tradable events (Catalysts).
 
-CRITICAL: The values for 'event_category' and 'reason' MUST be written in fluent Thai language. The 'reason' should be concise and clearly explain why the stock will move.
+CRITICAL: Output fields ('event_category', 'reason', 'actionable_summary') MUST be written fluently in Thai language while strictly adhering to JSON output format. The 'reason' and 'actionable_summary' should be concise and clearly explain why the stock will move and what action to take.
 
 STRICT OUTPUT FORMAT (JSON ONLY). Do not output markdown code blocks, just raw JSON:
 {
@@ -53,7 +54,8 @@ STRICT OUTPUT FORMAT (JSON ONLY). Do not output markdown code blocks, just raw J
       "impact_score": 85,
       "direction": "BEARISH",
       "event_category": "มหภาค (MACRO)",
-      "reason": "ปัญหาการขาดแคลนหน่วยความจำอาจทำให้ Apple ผลิตสินค้าไม่ทันตามความต้องการ ซึ่งส่งผลเสียต่อราคาหุ้น"
+      "reason": "ปัญหาการขาดแคลนหน่วยความจำอาจทำให้ Apple ผลิตสินค้าไม่ทันตามความต้องการ ซึ่งส่งผลเสียต่อราคาหุ้น",
+      "actionable_summary": "พิจารณาชะลอการเข้าซื้อหรือเปิดสถานะ Short เพื่อป้องกันความเสี่ยง"
     }
   ]
 }
@@ -62,8 +64,9 @@ Rules:
 - Only include stocks with a concrete, identifiable ticker symbol
 - impact_score must be 1-100 (integer)
 - direction must be exactly "BULLISH" or "BEARISH"
-- event_category and reason MUST be written in fluent Thai language
+- Output fields ('event_category', 'reason', 'actionable_summary') MUST be written fluently in Thai language while strictly adhering to JSON output format
 - reason must be concise and clearly explain why the stock will move
+- actionable_summary must provide clear actionable guidance in Thai
 - Return a maximum of 8 catalysts, ordered by impact_score descending
 - If no strong catalysts are found, return an empty catalysts array`;
 
