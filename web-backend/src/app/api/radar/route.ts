@@ -189,6 +189,12 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
   }
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, x-openrouter-key, Authorization",
+};
+
 // ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -199,7 +205,7 @@ export async function POST(req: NextRequest) {
     if (!apiKey) {
       return NextResponse.json(
         { success: false, error: "Unauthorized: Missing OpenRouter API Key", catalysts: [] },
-        { status: 401 }
+        { status: 401, headers: CORS_HEADERS }
       );
     }
 
@@ -218,7 +224,7 @@ export async function POST(req: NextRequest) {
         model:         HAIKU_MODEL,
         scanned_at:    new Date().toISOString(),
       },
-      { status: 200 }
+      { status: 200, headers: CORS_HEADERS }
     );
   } catch (err: unknown) {
     const message = (err as Error).message ?? "Internal server error";
@@ -226,7 +232,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       { success: false, error: message, catalysts: [] },
-      { status: 500 }
+      { status: 500, headers: CORS_HEADERS }
     );
   }
 }
@@ -235,11 +241,11 @@ export async function POST(req: NextRequest) {
 
 export async function OPTIONS() {
   return new Response(null, {
-    status: 204,
+    status: 200,
     headers: {
-      "Access-Control-Allow-Origin":  "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, x-openrouter-key",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, x-openrouter-key, Authorization",
     },
   });
 }

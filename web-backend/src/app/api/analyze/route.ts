@@ -121,6 +121,12 @@ async function callOpenRouter(
   return response.json() as Promise<OpenRouterResponse>;
 }
 
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, x-openrouter-key, Authorization",
+};
+
 // ─── Route Handler ────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -131,7 +137,13 @@ export async function POST(req: NextRequest) {
   if (!apiKey) {
     return new Response(
       encodeSSE({ type: "error", message: "Unauthorized: Missing OpenRouter API Key" }),
-      { status: 401, headers: { "Content-Type": "text/event-stream" } }
+      {
+        status: 401,
+        headers: {
+          "Content-Type": "text/event-stream",
+          ...CORS_HEADERS,
+        },
+      }
     );
   }
 
@@ -146,7 +158,13 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     return new Response(
       encodeSSE({ type: "error", message: (err as Error).message }),
-      { status: 400, headers: { "Content-Type": "text/event-stream" } }
+      {
+        status: 400,
+        headers: {
+          "Content-Type": "text/event-stream",
+          ...CORS_HEADERS,
+        },
+      }
     );
   }
 
@@ -305,6 +323,7 @@ Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_re
       "Cache-Control":     "no-cache, no-transform",
       "Connection":        "keep-alive",
       "X-Accel-Buffering": "no",
+      ...CORS_HEADERS,
     },
   });
 }
@@ -313,11 +332,11 @@ Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_re
 
 export async function OPTIONS() {
   return new Response(null, {
-    status: 204,
+    status: 200,
     headers: {
-      "Access-Control-Allow-Origin":  "*",
-      "Access-Control-Allow-Methods": "POST, OPTIONS",
-      "Access-Control-Allow-Headers": "Content-Type, x-openrouter-key",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, x-openrouter-key, Authorization",
     },
   });
 }
