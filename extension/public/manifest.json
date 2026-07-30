@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "SpeedInvest — AI Stock Analyzer",
+  "short_name": "SpeedInvest",
+  "version": "1.0.0",
+  "description": "Agentic AI analysis for penny stocks. Get real-time risk scores, momentum signals, and actionable entry zones powered by Claude & GPT-4o.",
+  "action": {
+    "default_title": "SpeedInvest — Analyze Stock"
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "background": {
+    "service_worker": "src/background/index.ts",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://finance.yahoo.com/*",
+        "https://www.tradingview.com/*",
+        "https://stockanalysis.com/*"
+      ],
+      "js": ["src/content/index.ts"],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "http://localhost:3000/*",
+    "https://your-backend-domain.com/*"
+  ]
+}
