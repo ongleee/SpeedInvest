@@ -50,7 +50,7 @@ FOCUS & PRIORITIZATION:
 CRITICAL INSTRUCTIONS:
 1. Prioritize identifying UPCOMING events, earnings previews, scheduled announcements, future macroeconomic shifts, or market rumors.
 2. The 'actionable_summary' (in Thai) MUST NOT just summarize past news, but explicitly state the expected future impact, potential trends, or what the market is anticipating (e.g., "คาดการณ์ว่าการประกาศสัปดาห์หน้าจะทำให้...", "ตลาดกำลังจับตาดูแนวโน้ม...").
-3. If the news is strictly about a future event, set 'event_category' to "UPCOMING" or "FORECAST" (or in Thai like "เหตุการณ์ในอนาคต (UPCOMING)" or "การคาดการณ์ (FORECAST)").
+3. CRITICAL RULE FOR CATEGORIES: If the news is about a future prediction, rumor, upcoming event, or forecast, you MUST set \`event_category\` exactly to 'UPCOMING' or 'FORECAST'. This MUST completely override any industry-specific categories (like 'TECHNOLOGY' or 'INDUSTRY'). Do not combine them.
 4. Output fields ('event_category', 'reason', 'actionable_summary') MUST be written fluently in Thai language.
 5. Output strictly remains in valid JSON format.
 
@@ -61,7 +61,7 @@ STRICT OUTPUT FORMAT (JSON ONLY). Do not output markdown code blocks, just raw J
       "ticker": "AAPL",
       "impact_score": 85,
       "direction": "BEARISH",
-      "event_category": "เหตุการณ์ในอนาคต (UPCOMING)",
+      "event_category": "UPCOMING",
       "reason": "รายงานผลประกอบการสัปดาห์หน้าอาจได้รับผลกระทบจากปัญหาการขาดแคลนชิป",
       "actionable_summary": "คาดการณ์ว่าการประกาศสัปดาห์หน้าจะทำให้แรงขายเพิ่มขึ้น ตลาดกำลังจับตาดูแนวโน้มยอดขายและอาจกดดันราคาหุ้นระยะสั้น"
     }
@@ -71,7 +71,7 @@ STRICT OUTPUT FORMAT (JSON ONLY). Do not output markdown code blocks, just raw J
 Rules:
 - Focus heavily on forward-looking and predictive analysis.
 - Prioritize UPCOMING events, earnings previews, scheduled announcements, future macroeconomic shifts, or market rumors.
-- If the news is strictly about a future event, set 'event_category' to "UPCOMING" or "FORECAST" (or in Thai like "เหตุการณ์ในอนาคต (UPCOMING)" or "การคาดการณ์ (FORECAST)").
+- CRITICAL RULE FOR CATEGORIES: If the news is about a future prediction, rumor, upcoming event, or forecast, you MUST set \`event_category\` exactly to 'UPCOMING' or 'FORECAST'. This MUST completely override any industry-specific categories (like 'TECHNOLOGY' or 'INDUSTRY'). Do not combine them.
 - Only include stocks with a concrete, identifiable ticker symbol.
 - impact_score must be 1-100 (integer).
 - direction must be exactly "BULLISH" or "BEARISH".
