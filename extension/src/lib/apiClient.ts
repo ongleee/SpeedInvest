@@ -7,6 +7,23 @@ import type { AnalyzeRequest, StreamEvent, RadarResponse } from "@/types";
 import { getSettings } from "./storage";
 
 /**
+ * Normalizes user-configured backend URL to get the target endpoint URL.
+ * Accepts inputs like:
+ * - "https://domain.com"
+ * - "https://domain.com/"
+ * - "https://domain.com/api/analyze"
+ * - "https://domain.com/api/radar"
+ */
+export function getEndpointUrl(userUrl: string, endpoint: "/api/analyze" | "/api/radar"): string {
+  const cleaned = (userUrl || "")
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/\/api\/(analyze|radar)$/i, "");
+
+  return `${cleaned}${endpoint}`;
+}
+
+/**
  * Streams the AI analysis for a given ticker from the backend.
  *
  * @param ticker - Stock ticker symbol, e.g. "AAPL" or "GULF.BK"
@@ -19,31 +36,46 @@ export async function streamAnalysis(
   signal?: AbortSignal
 ): Promise<void> {
   const settings = await getSettings();
-  const url = settings.backendUrl;
+  const url = getEndpointUrl(settings.backendUrl, "/api/analyze");
 
   const body: AnalyzeRequest = {
     ticker: ticker.trim().toUpperCase(),
     model: settings.model,
   };
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
-      "x-openrouter-key": settings.openRouterApiKey,
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+        "x-openrouter-key": settings.openRouterApiKey,
+      },
+      body: JSON.stringify(body),
+      signal,
+    });
+  } catch (fetchErr: unknown) {
+    const errorDetails = (fetchErr as Error).message ?? String(fetchErr);
+    console.error(`[API Client] Network fetch error calling ${url}:`, fetchErr);
+    throw new Error(`Failed to connect to ${url}: ${errorDetails}`);
+  }
 
   if (!response.ok) {
-    const errText = await response.text();
+    let errText = "";
+    try {
+      errText = await response.text();
+    } catch {
+      errText = "Unable to read response body";
+    }
+    console.error(`[API Client] HTTP error ${response.status} from ${url}:`, errText);
     throw new Error(`Backend error ${response.status}: ${errText}`);
   }
 
   if (!response.body) {
-    throw new Error("Response body is null — streaming not supported.");
+    const err = "Response body is null — streaming not supported.";
+    console.error(`[API Client] Error from ${url}:`, err);
+    throw new Error(err);
   }
 
   const reader = response.body
@@ -76,6 +108,9 @@ export async function streamAnalysis(
   }
 }
 
+/** Alias for streamAnalysis */
+export const fetchAnalysis = streamAnalysis;
+
 /**
  * Calls the /api/radar endpoint to run a Catalyst scan.
  * Derives the radar URL from the stored backend URL.
@@ -84,29 +119,41 @@ export async function streamAnalysis(
  */
 export async function fetchRadarScan(): Promise<RadarResponse> {
   const settings = await getSettings();
+  const url = getEndpointUrl(settings.backendUrl, "/api/radar");
 
-  // Derive the radar URL from the configured backend URL
-  // e.g. "http://localhost:3000/api/analyze" → "http://localhost:3000/api/radar"
-  const radarUrl = settings.backendUrl.replace(/\/api\/[^/]+$/, "/api/radar");
-
-  const response = await fetch(radarUrl, {
-    method:  "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-openrouter-key": settings.openRouterApiKey,
-    },
-    body:    JSON.stringify({}),
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-openrouter-key": settings.openRouterApiKey,
+      },
+      body: JSON.stringify({}),
+    });
+  } catch (fetchErr: unknown) {
+    const errorDetails = (fetchErr as Error).message ?? String(fetchErr);
+    console.error(`[API Client] Network fetch error calling ${url}:`, fetchErr);
+    throw new Error(`Failed to connect to ${url}: ${errorDetails}`);
+  }
 
   if (!response.ok) {
-    const errText = await response.text();
+    let errText = "";
+    try {
+      errText = await response.text();
+    } catch {
+      errText = "Unable to read response body";
+    }
+    console.error(`[API Client] Radar API HTTP error ${response.status} from ${url}:`, errText);
     throw new Error(`Radar API error ${response.status}: ${errText}`);
   }
 
   const data = (await response.json()) as RadarResponse;
 
   if (!data.success) {
-    throw new Error(data.error ?? "Catalyst Radar scan failed.");
+    const errMessage = data.error ?? "Catalyst Radar scan failed.";
+    console.error(`[API Client] Radar API returned unsuccessful response from ${url}:`, errMessage);
+    throw new Error(errMessage);
   }
 
   return data;

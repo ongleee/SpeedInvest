@@ -33,6 +33,7 @@
   ],
   "host_permissions": [
     "http://localhost:3000/*",
-    "https://your-backend-domain.com/*"
+    "https://*.vercel.app/*",
+    "https://openrouter.ai/*"
   ]
 }
