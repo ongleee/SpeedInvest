@@ -112,7 +112,7 @@ export interface CatalystResult {
   ticker:         string;
   impact_score:   number;
   direction:      "BULLISH" | "BEARISH";
-  event_category: "EARNINGS" | "M&A" | "PRODUCT" | "REGULATORY" | "MACRO";
+  event_category: "EARNINGS" | "M&A" | "PRODUCT" | "REGULATORY" | "MACRO" | "UPCOMING" | "FORECAST" | (string & {});
   reason:         string;
 }
 

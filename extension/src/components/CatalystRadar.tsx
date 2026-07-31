@@ -48,7 +48,34 @@ const CATEGORY_ICONS: Record<string, string> = {
   PRODUCT:    "🚀",
   REGULATORY: "⚖️",
   MACRO:      "🌐",
+  UPCOMING:   "⏳",
+  FORECAST:   "🔮",
 };
+
+/** Formats event_category into appropriate icon and display label */
+function getCategoryDetails(eventCategory: string): { icon: string; label: string } {
+  const upper = (eventCategory || "").toUpperCase();
+
+  if (upper.includes("UPCOMING")) {
+    return {
+      icon: "⏳",
+      label: "เหตุการณ์ในอนาคต (UPCOMING)",
+    };
+  }
+
+  if (upper.includes("FORECAST")) {
+    return {
+      icon: "🔮",
+      label: "การคาดการณ์ (FORECAST)",
+    };
+  }
+
+  const icon = CATEGORY_ICONS[upper] ?? CATEGORY_ICONS[eventCategory] ?? "📌";
+  return {
+    icon,
+    label: eventCategory,
+  };
+}
 
 const DIRECTION_CONFIG = {
   BULLISH: {
@@ -98,7 +125,7 @@ const CatalystCard: React.FC<{
 }> = ({ catalyst, index, onLaunchApex }) => {
   const colors    = impactColor(catalyst.impact_score);
   const direction = DIRECTION_CONFIG[catalyst.direction] ?? DIRECTION_CONFIG.BULLISH;
-  const catIcon   = CATEGORY_ICONS[catalyst.event_category] ?? "📌";
+  const { icon: catIcon, label: catLabel } = getCategoryDetails(catalyst.event_category);
 
   return (
     <div
@@ -146,7 +173,7 @@ const CatalystCard: React.FC<{
       <div className="flex flex-col gap-1">
         <span className="text-[10px] font-mono text-slate-400 tracking-widest uppercase flex items-center gap-1">
           <span>{catIcon}</span>
-          <span>{catalyst.event_category}</span>
+          <span>{catLabel}</span>
         </span>
         <p className="text-xs text-slate-300 leading-relaxed">
           {catalyst.reason}
