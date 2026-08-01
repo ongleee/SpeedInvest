@@ -80,7 +80,25 @@ Rules:
 - actionable_summary MUST NOT just summarize past news, but explicitly state the expected future impact, potential trends, or what the market is anticipating (e.g. "คาดการณ์ว่าการประกาศสัปดาห์หน้าจะทำให้...", "ตลาดกำลังจับตาดูแนวโน้ม...").
 - Return a maximum of 8 catalysts, ordered by impact_score descending.
 - If no strong catalysts are found, return an empty catalysts array.
-- Strictly return valid JSON ONLY.`;
+- Strictly return valid JSON ONLY.
+OUTPUT FORMAT: You MUST return ONLY raw, valid JSON. Do NOT wrap the output in markdown blocks (e.g., no \`\`\`json). Do NOT add any conversational text before or after the JSON object.`;
+
+// ─── Helper Functions ─────────────────────────────────────────────────────────
+
+/**
+ * Cleans the raw string response from the LLM model before parsing JSON.
+ * Strips out markdown code block formatting (like ```json and ```) and trims whitespace.
+ */
+function cleanJsonResponse(raw: string): string {
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/```(?:json)?/gi, "").replace(/```/g, "");
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  }
+  return cleaned.trim();
+}
 
 // ─── Mock News (rich fallback for dev / when Finnhub is unavailable) ──────────
 
@@ -185,11 +203,7 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
     throw new Error("OpenRouter returned an empty response content.");
   }
 
-  // Safely strip any accidental markdown code fences (```) before parsing
-  const cleaned = rawContent
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/,          "")
-    .trim();
+  const cleaned = cleanJsonResponse(rawContent);
 
   try {
     const parsed = JSON.parse(cleaned) as CatalystResponse;
