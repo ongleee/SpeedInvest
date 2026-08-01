@@ -50,8 +50,8 @@ FOCUS & PRIORITIZATION:
 CRITICAL INSTRUCTIONS:
 1. Prioritize identifying UPCOMING events, earnings previews, scheduled announcements, future macroeconomic shifts, or market rumors.
 2. The 'actionable_summary' (in Thai) MUST NOT just summarize past news, but explicitly state the expected future impact, potential trends, or what the market is anticipating (e.g., "คาดการณ์ว่าการประกาศสัปดาห์หน้าจะทำให้...", "ตลาดกำลังจับตาดูแนวโน้ม...").
-3. CRITICAL RULE FOR CATEGORIES: If the news is about a future prediction, rumor, upcoming event, or forecast, you MUST set \`event_category\` exactly to 'UPCOMING' or 'FORECAST'. This MUST completely override any industry-specific categories (like 'TECHNOLOGY' or 'INDUSTRY'). Do not combine them.
-4. Output fields ('event_category', 'reason', 'actionable_summary') MUST be written fluently in Thai language.
+3. CRITICAL RULE FOR CATEGORIES: Whenever future events, predictions, earnings previews, rumors, or forecasts are analyzed, you MUST set \`event_category\` STRICTLY to either "UPCOMING" or "FORECAST". This MUST completely override any industry-specific categories (like 'TECHNOLOGY' or 'INDUSTRY'). Do not combine them.
+4. Output text fields ('reason', 'actionable_summary') MUST be written fluently in Thai language.
 5. Output strictly remains in valid JSON format.
 
 STRICT OUTPUT FORMAT (JSON ONLY). Do not output markdown code blocks, just raw JSON:
@@ -68,14 +68,26 @@ STRICT OUTPUT FORMAT (JSON ONLY). Do not output markdown code blocks, just raw J
   ]
 }
 
+FEW-SHOT EXAMPLE FOR UPCOMING / FORECAST CATEGORIES:
+Example Output format:
+[
+  {
+    "ticker": "NVDA",
+    "impact_score": 90,
+    "direction": "BULLISH",
+    "event_category": "UPCOMING",
+    "reason": "คาดการณ์การประกาศผลประกอบการในสัปดาห์หน้า อาจส่งผลให้ราคาหุ้นปรับตัวขึ้น"
+  }
+]
+
 Rules:
 - Focus heavily on forward-looking and predictive analysis.
 - Prioritize UPCOMING events, earnings previews, scheduled announcements, future macroeconomic shifts, or market rumors.
-- CRITICAL RULE FOR CATEGORIES: If the news is about a future prediction, rumor, upcoming event, or forecast, you MUST set \`event_category\` exactly to 'UPCOMING' or 'FORECAST'. This MUST completely override any industry-specific categories (like 'TECHNOLOGY' or 'INDUSTRY'). Do not combine them.
+- CRITICAL RULE FOR CATEGORIES: Whenever future events, predictions, earnings previews, rumors, or forecasts are analyzed, \`event_category\` MUST STRICTLY output "UPCOMING" or "FORECAST". This MUST completely override any other category.
 - Only include stocks with a concrete, identifiable ticker symbol.
 - impact_score must be 1-100 (integer).
 - direction must be exactly "BULLISH" or "BEARISH".
-- Output fields ('event_category', 'reason', 'actionable_summary') MUST be written fluently in Thai language.
+- Output text fields ('reason', 'actionable_summary') MUST be written fluently in Thai language.
 - reason must be concise and clearly explain why the stock will move.
 - actionable_summary MUST NOT just summarize past news, but explicitly state the expected future impact, potential trends, or what the market is anticipating (e.g. "คาดการณ์ว่าการประกาศสัปดาห์หน้าจะทำให้...", "ตลาดกำลังจับตาดูแนวโน้ม...").
 - Return a maximum of 8 catalysts, ordered by impact_score descending.
@@ -94,8 +106,13 @@ function cleanJsonResponse(raw: string): string {
   cleaned = cleaned.replace(/```(?:json)?/gi, "").replace(/```/g, "");
   const firstBrace = cleaned.indexOf("{");
   const lastBrace = cleaned.lastIndexOf("}");
-  if (firstBrace !== -1 && lastBrace > firstBrace) {
+  const firstBracket = cleaned.indexOf("[");
+  const lastBracket = cleaned.lastIndexOf("]");
+
+  if (firstBrace !== -1 && lastBrace > firstBrace && (firstBracket === -1 || firstBrace < firstBracket)) {
     cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  } else if (firstBracket !== -1 && lastBracket > firstBracket) {
+    cleaned = cleaned.slice(firstBracket, lastBracket + 1);
   }
   return cleaned.trim();
 }
@@ -187,7 +204,7 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
         { role: "user",   content: userMessage },
       ],
       temperature: 0.2,
-      max_tokens:  1024,
+      max_tokens:  1000,
     }),
   });
 
@@ -206,13 +223,17 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
   const cleaned = cleanJsonResponse(rawContent);
 
   try {
-    const parsed = JSON.parse(cleaned) as CatalystResponse;
+    let parsed = JSON.parse(cleaned);
+
+    if (Array.isArray(parsed)) {
+      parsed = { catalysts: parsed };
+    }
 
     if (!Array.isArray(parsed.catalysts)) {
       throw new Error("Parsed response is missing the `catalysts` array.");
     }
 
-    return parsed;
+    return parsed as CatalystResponse;
   } catch {
     throw new Error(`Failed to parse JSON from model response: ${cleaned.slice(0, 200)}`);
   }

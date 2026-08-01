@@ -108,7 +108,7 @@ async function callOpenRouter(
       ...(stream ? {} : { tools: STOCK_ANALYSIS_TOOLS, tool_choice: "auto" }),
       stream,
       temperature: 0.3,
-      max_tokens:  2048,
+      max_tokens:  1000,
     }),
   });
 
