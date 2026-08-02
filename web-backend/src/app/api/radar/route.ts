@@ -204,7 +204,7 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
         { role: "user",   content: userMessage },
       ],
       temperature: 0.2,
-      max_tokens:  1000,
+      max_tokens:  800,
     }),
   });
 
