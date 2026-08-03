@@ -35,6 +35,44 @@ const REQUEST_SCHEMA = z.object({
   model: z.string().optional(),
 });
 
+// ─── Utility Helpers ─────────────────────────────────────────────────────────
+
+/**
+ * Truncates text input/context to max 1500 characters to optimize token usage.
+ */
+function truncateInput(text: string, maxLength: number = 1500): string {
+  if (!text) return "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+/**
+ * Safely attempts to parse JSON with fallback to regex object extraction.
+ */
+function safeParseJSON<T>(raw: string, fallback: T): T {
+  if (!raw || typeof raw !== "string") return fallback;
+
+  try {
+    return JSON.parse(raw) as T;
+  } catch (e) {
+    console.warn("[Analyze] Standard JSON.parse failed, attempting regex object block extraction...", e);
+    try {
+      const matches = raw.match(/\{[^{}]*\}/g);
+      if (matches && matches.length > 0) {
+        for (const match of matches) {
+          try {
+            return JSON.parse(match) as T;
+          } catch {
+            // continue searching next block
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return fallback;
+  }
+}
+
 // ─── SSE Helpers ─────────────────────────────────────────────────────────────
 
 type SSEEvent =
@@ -153,10 +191,10 @@ export async function POST(req: NextRequest) {
   let ticker: string;
 
   try {
-    const body = await req.json();
+    const rawBody = await req.text();
+    const body = safeParseJSON(rawBody, {});
     const parsed = REQUEST_SCHEMA.parse(body);
     ticker = parsed.ticker.toUpperCase();
-    // Front-end model parameter is intentionally ignored in favor of hardcoded OPENAI_GPT4_TURBO_MODEL
   } catch (err) {
     return new Response(
       encodeSSE({ type: "error", message: (err as Error).message }),
@@ -180,15 +218,17 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        // ── 3. Initialize conversation messages ──────────────────────────
+        // ── 3. Initialize conversation messages with input truncation ─────
+        const initialPrompt = truncateInput(
+          `Please analyze the stock ticker: **${ticker}**\n\nUse available tools to gather complete data before providing your analysis.\nCall get_stock_price, get_technical_indicators, get_fundamental_data, and get_recent_news — in that order.`,
+          1500
+        );
+
         const messages: OpenRouterMessage[] = [
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Please analyze the stock ticker: **${ticker}**
-
-Use available tools to gather complete data before providing your analysis.
-Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_recent_news — in that order.`,
+            content: initialPrompt,
           },
         ];
 
@@ -199,7 +239,7 @@ Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_re
         while (round < MAX_TOOL_ROUNDS) {
           round++;
 
-          // Call OpenRouter in non-streaming mode to handle tool choice (strictly with openai/gpt-4-turbo)
+          // Call OpenRouter in non-streaming mode to handle tool choice
           const response = await callOpenRouter(messages, false, apiKey);
           const choice = response.choices[0];
 
@@ -216,13 +256,7 @@ Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_re
 
             for (const toolCall of assistantMessage.tool_calls) {
               const toolName = toolCall.function.name;
-              let toolArgs: Record<string, string>;
-
-              try {
-                toolArgs = JSON.parse(toolCall.function.arguments) as Record<string, string>;
-              } catch {
-                toolArgs = { ticker };
-              }
+              const toolArgs = safeParseJSON<Record<string, string>>(toolCall.function.arguments, { ticker });
 
               // Notify client tool starting
               send({ type: "tool_call", toolName, status: "started" });
@@ -239,12 +273,13 @@ Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_re
               // Notify client tool completed
               send({ type: "tool_call", toolName, status: "completed", data: toolResult });
 
-              // Push result back to messages
+              // Push truncated result back to messages to conserve prompt tokens
+              const truncatedResult = truncateInput(JSON.stringify(toolResult), 1500);
               messages.push({
                 role:         "tool",
                 tool_call_id: toolCall.id,
                 name:         toolName,
-                content:      JSON.stringify(toolResult),
+                content:      truncatedResult,
               });
             }
 
@@ -291,8 +326,8 @@ Call get_stock_price, get_technical_indicators, get_fundamental_data, and get_re
 
               if (trimmed.startsWith("data: ")) {
                 try {
-                  const parsedData = JSON.parse(trimmed.slice(6));
-                  const deltaContent = parsedData.choices?.[0]?.delta?.content;
+                  const parsedData = safeParseJSON<any>(trimmed.slice(6), null);
+                  const deltaContent = parsedData?.choices?.[0]?.delta?.content;
                   if (deltaContent) {
                     send({ type: "text_chunk", content: deltaContent });
                   }

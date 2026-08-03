@@ -42,6 +42,105 @@ interface NewsHeadline {
   related?:  string;
 }
 
+// ─── Utility Functions ────────────────────────────────────────────────────────
+
+/**
+ * Truncates text to a maximum length to save prompt tokens.
+ */
+function truncateInput(text: string, maxLength: number = 1500): string {
+  if (!text) return "";
+  return text.length > maxLength ? text.slice(0, maxLength) : text;
+}
+
+/**
+ * Ensures event_category strictly adheres to 'UPCOMING' or 'FORECAST'.
+ */
+function sanitizeCatalystCategory(item: CatalystResult): CatalystResult {
+  const cat = (item.event_category || "").toUpperCase();
+  if (cat !== "UPCOMING" && cat !== "FORECAST") {
+    item.event_category = "UPCOMING";
+  }
+  return item;
+}
+
+/**
+ * Cleans the raw string response from the LLM model before parsing JSON.
+ * Strips out markdown code block formatting (like ```json and ```) and trims whitespace.
+ */
+function cleanJsonResponse(raw: string): string {
+  let cleaned = raw.trim();
+  cleaned = cleaned.replace(/```(?:json)?/gi, "").replace(/```/g, "");
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  const firstBracket = cleaned.indexOf("[");
+  const lastBracket = cleaned.lastIndexOf("]");
+
+  if (firstBrace !== -1 && lastBrace > firstBrace && (firstBracket === -1 || firstBrace < firstBracket)) {
+    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
+  } else if (firstBracket !== -1 && lastBracket > firstBracket) {
+    cleaned = cleaned.slice(firstBracket, lastBracket + 1);
+  }
+  return cleaned.trim();
+}
+
+/**
+ * Safely parses LLM response using standard JSON parsing with a regex block extraction fallback.
+ * Extracts complete object blocks {...} containing "ticker" to tolerate cut-off responses.
+ * Returns [] fallback on complete parse failure.
+ */
+function safeParseCatalysts(rawContent: string): CatalystResult[] {
+  if (!rawContent || typeof rawContent !== "string") {
+    return [];
+  }
+
+  // 1. Try standard JSON parse on cleaned content
+  try {
+    const cleaned = cleanJsonResponse(rawContent);
+    const parsed = JSON.parse(cleaned);
+    let items: any[] = [];
+
+    if (Array.isArray(parsed)) {
+      items = parsed;
+    } else if (parsed && typeof parsed === "object" && Array.isArray(parsed.catalysts)) {
+      items = parsed.catalysts;
+    }
+
+    if (items.length > 0) {
+      const validItems = items
+        .filter((item) => item && typeof item === "object" && "ticker" in item)
+        .map((item) => sanitizeCatalystCategory(item as CatalystResult));
+      if (validItems.length > 0) return validItems;
+    }
+  } catch (e) {
+    console.warn("[Radar] Full JSON parse failed, attempting regex object block extraction...", e);
+  }
+
+  // 2. Regex fallback: Extract complete {...} blocks containing "ticker"
+  try {
+    const extractedItems: CatalystResult[] = [];
+    const matches = rawContent.match(/\{[^{}]*\}/g) || [];
+
+    for (const match of matches) {
+      if (!match.includes('"ticker"') && !match.includes("'ticker'")) {
+        continue;
+      }
+      try {
+        const obj = JSON.parse(match);
+        if (obj && typeof obj === "object" && obj.ticker) {
+          extractedItems.push(sanitizeCatalystCategory(obj as CatalystResult));
+        }
+      } catch {
+        // Skip incomplete or invalid individual object blocks
+      }
+    }
+
+    return extractedItems;
+  } catch (err) {
+    console.error("[Radar] Regex object block extraction failed:", err);
+    return [];
+  }
+}
+
 // ─── System Prompt ────────────────────────────────────────────────────────────
 
 const CATALYST_SYSTEM_PROMPT = `You are 'Catalyst', an elite AI Quantitative News Screener focused heavily on Forward-looking and Predictive analysis. Analyze a batch of recent news headlines and identify high-probability tradable events and future market catalysts.
@@ -52,7 +151,7 @@ FOCUS & PRIORITIZATION:
 CRITICAL INSTRUCTIONS:
 1. Prioritize identifying UPCOMING events, earnings previews, scheduled announcements, future macroeconomic shifts, or market rumors.
 2. The 'actionable_summary' (in Thai) MUST NOT just summarize past news, but explicitly state the expected future impact, potential trends, or what the market is anticipating (e.g., "คาดการณ์ว่าการประกาศสัปดาห์หน้าจะทำให้...", "ตลาดกำลังจับตาดูแนวโน้ม...").
-3. CRITICAL RULE FOR CATEGORIES: Whenever future events, predictions, earnings previews, rumors, or forecasts are analyzed, you MUST set \`event_category\` STRICTLY to either "UPCOMING" or "FORECAST". This MUST completely override any industry-specific categories (like 'TECHNOLOGY' or 'INDUSTRY'). Do not combine them.
+3. CRITICAL: The 'event_category' MUST ONLY be 'UPCOMING' or 'FORECAST'. NEVER use industry names like 'มหภาค (MACRO)'. If you are unsure, default to 'UPCOMING'.
 4. Output text fields ('reason', 'actionable_summary') MUST be written fluently in Thai language.
 5. Output strictly remains in valid JSON format.
 
@@ -85,7 +184,7 @@ Example Output format:
 Rules:
 - Focus heavily on forward-looking and predictive analysis.
 - Prioritize UPCOMING events, earnings previews, scheduled announcements, future macroeconomic shifts, or market rumors.
-- CRITICAL RULE FOR CATEGORIES: Whenever future events, predictions, earnings previews, rumors, or forecasts are analyzed, \`event_category\` MUST STRICTLY output "UPCOMING" or "FORECAST". This MUST completely override any other category.
+- CRITICAL: The 'event_category' MUST ONLY be 'UPCOMING' or 'FORECAST'. NEVER use industry names like 'มหภาค (MACRO)'. If you are unsure, default to 'UPCOMING'.
 - Only include stocks with a concrete, identifiable ticker symbol.
 - impact_score must be 1-100 (integer).
 - direction must be exactly "BULLISH" or "BEARISH".
@@ -96,28 +195,6 @@ Rules:
 - If no strong catalysts are found, return an empty catalysts array.
 - Strictly return valid JSON ONLY.
 OUTPUT FORMAT: You MUST return ONLY raw, valid JSON. Do NOT wrap the output in markdown blocks (e.g., no \`\`\`json). Do NOT add any conversational text before or after the JSON object.`;
-
-// ─── Helper Functions ─────────────────────────────────────────────────────────
-
-/**
- * Cleans the raw string response from the LLM model before parsing JSON.
- * Strips out markdown code block formatting (like ```json and ```) and trims whitespace.
- */
-function cleanJsonResponse(raw: string): string {
-  let cleaned = raw.trim();
-  cleaned = cleaned.replace(/```(?:json)?/gi, "").replace(/```/g, "");
-  const firstBrace = cleaned.indexOf("{");
-  const lastBrace = cleaned.lastIndexOf("}");
-  const firstBracket = cleaned.indexOf("[");
-  const lastBracket = cleaned.lastIndexOf("]");
-
-  if (firstBrace !== -1 && lastBrace > firstBrace && (firstBracket === -1 || firstBrace < firstBracket)) {
-    cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-  } else if (firstBracket !== -1 && lastBracket > firstBracket) {
-    cleaned = cleaned.slice(firstBracket, lastBracket + 1);
-  }
-  return cleaned.trim();
-}
 
 // ─── Mock News (rich fallback for dev / when Finnhub is unavailable) ──────────
 
@@ -182,14 +259,20 @@ async function fetchFinnhubNews(): Promise<NewsHeadline[]> {
 async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Promise<CatalystResponse> {
   if (!apiKey) throw new Error("No API key provided for OpenRouter.");
 
-  const headlinesText = headlines
+  const rawHeadlinesText = headlines
     .map((h, i) => {
       const related = h.related ? ` [${h.related}]` : "";
       return `${i + 1}. ${h.headline}${related} (${h.source})`;
     })
     .join("\n");
 
-  const userMessage = `Analyze these ${headlines.length} recent market news headlines and identify the most actionable trading catalysts:\n\n${headlinesText}\n\nReturn the top catalysts as a raw JSON object matching the required schema.`;
+  // Requirement 1: Truncate input headlines text to max 1500 characters
+  const truncatedHeadlinesText = truncateInput(rawHeadlinesText, 1500);
+
+  const userMessage = truncateInput(
+    `Analyze these ${headlines.length} recent market news headlines and identify the most actionable trading catalysts:\n\n${truncatedHeadlinesText}\n\nReturn the top catalysts as a raw JSON object matching the required schema.`,
+    1500
+  );
 
   const response = await fetch(OPENROUTER_URL, {
     method:  "POST",
@@ -218,27 +301,9 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
   const json   = await response.json();
   const rawContent: string = json?.choices?.[0]?.message?.content ?? "";
 
-  if (!rawContent) {
-    throw new Error("OpenRouter returned an empty response content.");
-  }
-
-  const cleaned = cleanJsonResponse(rawContent);
-
-  try {
-    let parsed = JSON.parse(cleaned);
-
-    if (Array.isArray(parsed)) {
-      parsed = { catalysts: parsed };
-    }
-
-    if (!Array.isArray(parsed.catalysts)) {
-      throw new Error("Parsed response is missing the `catalysts` array.");
-    }
-
-    return parsed as CatalystResponse;
-  } catch {
-    throw new Error(`Failed to parse JSON from model response: ${cleaned.slice(0, 200)}`);
-  }
+  // Requirement 2: Use robust JSON extraction with regex block matching
+  const catalysts = safeParseCatalysts(rawContent);
+  return { catalysts };
 }
 
 const CORS_HEADERS = {
@@ -282,9 +347,10 @@ export async function POST(req: NextRequest) {
     const message = (err as Error).message ?? "Internal server error";
     console.error("[/api/radar] Error:", message);
 
+    // Requirement 2: Graceful fallback array [] instead of throwing 500 error
     return NextResponse.json(
-      { success: false, error: message, catalysts: [] },
-      { status: 500, headers: CORS_HEADERS }
+      { success: true, catalysts: [], error: message },
+      { status: 200, headers: CORS_HEADERS }
     );
   }
 }
