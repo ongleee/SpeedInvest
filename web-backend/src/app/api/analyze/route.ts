@@ -24,6 +24,7 @@ import { SYSTEM_PROMPT }        from "@/lib/prompts/systemPrompt";
 const OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions";
 const OPENAI_GPT4_TURBO_MODEL = "openai/gpt-4-turbo";
 const MAX_TOOL_ROUNDS = 6;
+const STRICT_MAX_TOKENS = 500;
 
 const REQUEST_SCHEMA = z.object({
   ticker: z
@@ -134,6 +135,16 @@ async function callOpenRouter(
 ): Promise<OpenRouterResponse | Response> {
   if (!apiKey) throw new Error("OpenRouter API key is missing");
 
+  // Strictly construct the OpenRouter payload. Hardcode max_tokens: 500 at TOP LEVEL.
+  const payload = {
+    model:       OPENAI_GPT4_TURBO_MODEL,
+    messages,
+    ...(stream ? {} : { tools: STOCK_ANALYSIS_TOOLS, tool_choice: "auto" }),
+    stream,
+    temperature: 0.3,
+    max_tokens:  STRICT_MAX_TOKENS,
+  };
+
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -142,14 +153,7 @@ async function callOpenRouter(
       "HTTP-Referer":  process.env.HTTP_REFERER || process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       "X-Title":       process.env.X_TITLE || process.env.NEXT_PUBLIC_SITE_NAME || "SpeedInvest",
     },
-    body: JSON.stringify({
-      model:       OPENAI_GPT4_TURBO_MODEL,
-      messages,
-      ...(stream ? {} : { tools: STOCK_ANALYSIS_TOOLS, tool_choice: "auto" }),
-      stream,
-      temperature: 0.3,
-      max_tokens:  800,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -187,12 +191,16 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // ── 1. Parse & Validate Request ─────────────────────────────────────────
+  // ── 1. Parse, Sanitize & Validate Request ───────────────────────────────
   let ticker: string;
 
   try {
     const rawBody = await req.text();
-    const body = safeParseJSON(rawBody, {});
+    const body = safeParseJSON<Record<string, unknown>>(rawBody, {});
+
+    // Explicitly delete any max_tokens field from incoming payload to prevent override
+    delete body.max_tokens;
+
     const parsed = REQUEST_SCHEMA.parse(body);
     ticker = parsed.ticker.toUpperCase();
   } catch (err) {

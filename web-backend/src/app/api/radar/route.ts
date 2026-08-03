@@ -19,6 +19,7 @@ import { NextRequest, NextResponse } from "next/server";
 const OPENROUTER_URL  = "https://openrouter.ai/api/v1/chat/completions";
 const HAIKU_MODEL     = "anthropic/claude-3-haiku";
 const FINNHUB_BASE    = "https://finnhub.io/api/v1";
+const STRICT_MAX_TOKENS = 500;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -266,13 +267,24 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
     })
     .join("\n");
 
-  // Requirement 1: Truncate input headlines text to max 1500 characters
+  // Truncate input headlines text to max 1500 characters
   const truncatedHeadlinesText = truncateInput(rawHeadlinesText, 1500);
 
   const userMessage = truncateInput(
     `Analyze these ${headlines.length} recent market news headlines and identify the most actionable trading catalysts:\n\n${truncatedHeadlinesText}\n\nReturn the top catalysts as a raw JSON object matching the required schema.`,
     1500
   );
+
+  // Strictly construct OpenRouter payload with hardcoded max_tokens: 500 at TOP LEVEL
+  const payload = {
+    model:       HAIKU_MODEL,
+    messages: [
+      { role: "system", content: CATALYST_SYSTEM_PROMPT },
+      { role: "user",   content: userMessage },
+    ],
+    temperature: 0.2,
+    max_tokens:  STRICT_MAX_TOKENS,
+  };
 
   const response = await fetch(OPENROUTER_URL, {
     method:  "POST",
@@ -282,15 +294,7 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
       "HTTP-Referer":  process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000",
       "X-Title":       process.env.NEXT_PUBLIC_SITE_NAME || "SpeedInvest",
     },
-    body: JSON.stringify({
-      model:       HAIKU_MODEL,
-      messages: [
-        { role: "system", content: CATALYST_SYSTEM_PROMPT },
-        { role: "user",   content: userMessage },
-      ],
-      temperature: 0.2,
-      max_tokens:  800,
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -301,7 +305,7 @@ async function callCatalystModel(headlines: NewsHeadline[], apiKey: string): Pro
   const json   = await response.json();
   const rawContent: string = json?.choices?.[0]?.message?.content ?? "";
 
-  // Requirement 2: Use robust JSON extraction with regex block matching
+  // Robust JSON extraction with regex block matching
   const catalysts = safeParseCatalysts(rawContent);
   return { catalysts };
 }
@@ -326,6 +330,22 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Extract & sanitize incoming JSON payload to prevent max_tokens overrides
+    let rawBody = "";
+    try {
+      rawBody = await req.text();
+    } catch {
+      // Body may be empty
+    }
+    if (rawBody) {
+      try {
+        const body = JSON.parse(rawBody);
+        delete body.max_tokens;
+      } catch {
+        // ignore JSON parse error for empty body
+      }
+    }
+
     // 1. Fetch market headlines (real or mock)
     const headlines = await fetchFinnhubNews();
 
@@ -347,7 +367,7 @@ export async function POST(req: NextRequest) {
     const message = (err as Error).message ?? "Internal server error";
     console.error("[/api/radar] Error:", message);
 
-    // Requirement 2: Graceful fallback array [] instead of throwing 500 error
+    // Graceful fallback array [] instead of throwing 500 error
     return NextResponse.json(
       { success: true, catalysts: [], error: message },
       { status: 200, headers: CORS_HEADERS }
